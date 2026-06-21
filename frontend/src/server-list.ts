@@ -210,6 +210,15 @@ export class ServerList {
 
       const { wsUrl } = await res.json() as { wsUrl: string };
       this.onConnect(wsUrl, server.name);
+
+      // 连接成功跳转终端后，立即恢复按钮的原始状态，以便用户断开连接返回后看到的是正常按钮
+      if (connectBtn) {
+        connectBtn.innerHTML = `
+          <span class="material-symbols-outlined" style="font-size: 14px;">power_settings_new</span>
+          CONNECT
+        `;
+        (connectBtn as HTMLButtonElement).disabled = false;
+      }
     } catch (e) {
       alert(`连接失败: ${e instanceof Error ? e.message : String(e)}`);
       // 恢复按钮状态
