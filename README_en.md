@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
   <h1>CloudSSH</h1>
   <p>A Serverless Web SSH Terminal built on Cloudflare Workers: Connect and manage your servers directly from the browser.</p>
   <p><b>Ultra-lightweight · Out-of-the-box · Cyberpunk UI</b></p>
@@ -57,41 +57,86 @@
 
 ### Secure and Reliable
 
-- **End-to-End Encryption**: Complete implementation of the SSH-2.0 protocol, including ECDH key exchange, Ed25519 signature authentication, and AES-256-GCM data encryption.
-- **Security Hardening**: Built-in SSRF protection against IPv6 and reserved IPs, API rate limiting (anti-brute force), and local AES-GCM encryption for your stored server credentials.
+- **End-to-End Encryption**: Complete SSH-2.0 protocol implementation supporting Curve25519-SHA256 (preferred) and ECDH-NISTP256 key exchange, AES-256-GCM (preferred) / AES-128-GCM / AES-256-CTR data encryption, and HMAC-SHA2-256/512 integrity verification.
+- **Multi-Algorithm Host Key Verification**: Supports Ed25519, ECDSA P-256, and RSA signature verification, with SHA-256 fingerprint display on first connection (TOFU mode).
+- **Security Hardening**: Built-in SSRF protection against IPv6 and reserved IPs, API rate limiting (anti-brute force), and local AES-256-GCM encryption for your stored server credentials.
 - **Human Verification**: Supports Cloudflare Turnstile verification to prevent malicious bot abuse.
 - **Isolated Session State**: Leveraging Cloudflare Durable Objects and the Hibernation API, every terminal session runs securely and persistently within its sandbox.
+- **Zero Credential Exposure**: One-Time-Token mechanism ensures passwords/private keys never pass through the frontend, securely flowing entirely within the Worker.
 
 <a id="features"></a>
 ## Features
 
-- **Full SSH Handshake**: Native TypeScript implementation of the SSH transport layer and user authentication protocols.
+- **Pure TypeScript SSH-2.0 Implementation**: Fully self-developed SSH protocol stack, with no dependency on any third-party SSH libraries, implementing all cryptographic operations based on Web Crypto API.
+- **Multi-Algorithm Key Exchange**: Supports Curve25519-SHA256 (preferred) and ECDH-NISTP256 KEX algorithms, compatible with various SSH servers (including Dropbear).
 - **IPv4/IPv6 Dual Stack**: Full support for both IPv4 and IPv6 address connections, including automatic handling of IPv6 bracket notation.
 - **Multiple Auth Methods**: Supports standard SSH password authentication as well as Ed25519 plaintext private key authentication.
-- **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, preventing eavesdropping by malicious nodes.
+- **MitM Protection (TOFU)**: Automatically extracts and prints the server's Host Key (SHA-256 fingerprint) on the first connection, supporting Ed25519/ECDSA/RSA signature verification.
 - **Geek Terminal Experience**: Powered by `@xterm/xterm` and the `@xterm/addon-webgl` hardware acceleration rendering engine, ensuring silky smooth scrolling even with massive log outputs.
 - **Customizable UI**: Switch seamlessly between classic terminal themes like Cyberpunk, Glacier, and Gruvbox, fully optimized for mobile devices.
 - **Native File Transfer**: Integrated with [trzsz.js](https://github.com/trzsz/trzsz.js), supporting `trz` (upload) / `tsz` (download) commands for file transfer, fully compatible with tmux sessions. Also supports drag-and-drop file upload to the terminal, directory transfer, and resumable transfers. (Requires [trzsz](https://trzsz.github.io/) installed on the remote server)
+- **GitHub OAuth Integration**: Supports GitHub login, allowing users to save and manage frequently used SSH servers for one-click connections.
 
 <a id="architecture"></a>
 ## Architecture
 
+### System Architecture
+
 ```mermaid
 flowchart TB
-    Browser["Browser Client<br/>(TypeScript + xterm.js)"]
-    CF["Cloudflare Edge Network"]
-    DO["Durable Object<br/>(SSH Session Management)"]
-    Server["Target SSH Server<br/>(e.g., Linux VPS)"]
+    subgraph "Browser Client"
+        UI["Frontend UI<br/>TypeScript + xterm.js"]
+        Trzsz["trzsz File Transfer"]
+    end
+    
+    subgraph "Cloudflare Edge Network"
+        Worker["Worker<br/>Routing + API"]
+        SSH_DO["SSHSessionDO<br/>SSH Session Management"]
+        User_DO["UserDBDO<br/>User Data Management"]
+    end
+    
+    subgraph "Target Server"
+        SSH["SSH Server<br/>(OpenSSH/Dropbear)"
+    end
 
-    Browser <-->|"WebSocket<br/>(Frontend UI Input & Terminal Output)"| CF
-    CF <-->|"WebSocket"<br/>Routing & Long-lived Connection| DO
-    DO <-->|"TCP Socket<br/>@cloudflare/sockets"| Server
+    UI <-->|"WebSocket<br/>Terminal I/O"| Worker
+    Trzsz <-->|"trzsz Protocol"| UI
+    Worker <-->|"WebSocket"| SSH_DO
+    Worker <-->|"Internal API"| User_DO
+    SSH_DO <-->|"TCP Socket<br/>@cloudflare/sockets"| SSH
 ```
 
-1. The user enters the host IP, username, and password on the frontend.
+### Core Components
+
+| Component | File | Responsibility |
+|-----------|------|----------------|
+| **Worker Entry** | `src/worker/index.ts` | HTTP routing, API handling, WebSocket upgrade |
+| **SSHSessionDO** | `src/worker/durable-object.ts` | SSH session lifecycle management, SSRF protection |
+| **UserDBDO** | `src/worker/user-db.ts` | User data, server configs, rate limiting (SQLite) |
+| **SSHSession** | `src/worker/ssh-session.ts` | SSH protocol state machine (connect→version→kex→auth→interactive) |
+| **SSH Protocol Stack** | `src/ssh/*.ts` | Pure TypeScript SSH-2.0 implementation (transport, crypto, auth, channels) |
+| **Frontend Terminal** | `frontend/src/terminal.ts` | xterm.js wrapper, trzsz integration, WebSocket management |
+
+### SSH Protocol Implementation
+
+This project implements a complete SSH-2.0 protocol stack:
+
+| Layer | Implementation | Supported Algorithms |
+|-------|----------------|---------------------|
+| **Key Exchange** | `kex-curve25519.ts` / `kex-ecdh.ts` | curve25519-sha256, ecdh-sha2-nistp256 |
+| **Data Encryption** | `crypto.ts` | aes256-gcm, aes128-gcm, aes256-ctr, aes192-ctr, aes128-ctr |
+| **Integrity** | `crypto.ts` | hmac-sha2-256, hmac-sha2-512, hmac-sha1 |
+| **Host Keys** | `ssh-session.ts` | Ed25519, ECDSA P-256, RSA |
+| **User Auth** | `auth.ts` | Password authentication, Ed25519 public key authentication |
+| **Channel Management** | `channel.ts` | Session channel, PTY, shell, window-change |
+
+### Data Flow
+
+1. The user enters the host IP, username, and password on the frontend (or selects a saved server via GitHub OAuth).
 2. The frontend establishes a WebSocket connection with the backend Durable Object.
-3. The DO receives the credentials and establishes a TCP connection with the target SSH server using `@cloudflare/sockets`.
-4. The DO handles the entire SSH protocol negotiation (key exchange, password auth, etc.) in pure code and forwards the encrypted terminal data to the frontend via WebSocket.
+3. SSHSessionDO receives the credentials and establishes a TCP connection with the target SSH server using `@cloudflare/sockets`.
+4. SSHSession executes the complete SSH protocol negotiation (version exchange → key exchange → authentication → channel open → PTY → Shell).
+5. Encrypted terminal data is bidirectionally forwarded between the frontend and SSH server via WebSocket.
 
 <a id="quick-start"></a>
 ## Quick Deployment
@@ -186,15 +231,52 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
 <a id="development"></a>
 ## Development
 
-This project consists of two parts:
-1. **Frontend**: Located in the `frontend/` directory, built with Vite.
-2. **Worker**: Located in the `src/` directory, containing the Cloudflare Worker entry point and the core SSH protocol implementation.
+### Project Structure
 
-For local development, you can run:
-```bash
-pnpm run dev
+This project uses pnpm monorepo workspace structure:
+
 ```
-This command starts Wrangler's local development environment server.
+CloudSSH/
+├── src/                    # Backend source (Cloudflare Worker)
+│   ├── ssh/                # SSH protocol pure implementation layer
+│   └── worker/             # Worker entry and Durable Objects
+├── frontend/               # Frontend source (independent workspace)
+│   ├── src/                # TypeScript + xterm.js + trzsz
+│   └── package.json        # Frontend dependencies
+├── scripts/                # Build scripts
+├── pnpm-workspace.yaml     # pnpm workspace configuration
+└── wrangler.toml           # Cloudflare deployment configuration
+```
+
+### Local Development
+
+1. **Install Dependencies**
+   ```bash
+   pnpm install
+   ```
+
+2. **Start Development Server**
+   ```bash
+   pnpm run dev
+   ```
+   This command builds the frontend and starts the Wrangler local development environment.
+
+3. **Build Frontend Only**
+   ```bash
+   pnpm run build:frontend
+   ```
+
+### Tech Stack
+
+| Layer | Technology | Description |
+|-------|------------|-------------|
+| **Frontend** | TypeScript + Vite + xterm.js | Web terminal emulator, WebGL hardware acceleration |
+| **UI Framework** | Tailwind CSS (CDN) | Cyberpunk-style dark theme |
+| **File Transfer** | trzsz.js | Supports trz/tsz commands, drag-and-drop upload, resumable transfers |
+| **Backend** | Cloudflare Workers | Serverless edge computing |
+| **Session Management** | Durable Objects | SSH session isolation, Hibernation API |
+| **Data Storage** | Durable Objects SQLite | User data, server configurations |
+| **Package Manager** | pnpm (workspace) | Monorepo dependency management |
 
 <a id="license"></a>
 ## License
