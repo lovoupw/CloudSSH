@@ -163,7 +163,7 @@ flowchart TB
 4. **访问应用**：部署成功后，可通过默认域名 `https://cloudssh.<你的子域>.workers.dev` 访问。
 5. **绑定自定义域名**（可选）：进入 Worker 的 Settings → Domains & Routes → Add，输入你的域名并确认。
 
-> **说明**：如需部署 test 环境，可 Fork 后在 `test` 分支上重复上述步骤，创建独立的 Worker（如 `cloudssh-test`），两个 Worker 共享相同的 DO 类名即可实现数据互通。
+> **说明**：如需部署 test 环境，可 Fork 后在 `test` 分支上重复上述步骤，创建独立的 Worker（如 `cloudssh-test`）。两个环境的 Durable Objects 数据完全隔离，各自独立。
 
 #### 方式二：本地命令行部署
 
@@ -198,9 +198,9 @@ flowchart TB
 | 环境 | 命令 | 默认域名 | 说明 |
 |------|------|---------|------|
 | Production | `pnpm run deploy` | `cloudssh.<子域>.workers.dev` | main 分支代码 |
-| Test | `pnpm run deploy:test` | `cloudssh-test.<子域>.workers.dev` | test 分支代码，与生产环境共享 DO 数据 |
+| Test | `pnpm run deploy:test` | `cloudssh-test.<子域>.workers.dev` | test 分支代码，与生产环境 DO 数据隔离 |
 
-> **说明**：两个环境的 Durable Objects 绑定相同的 class_name，数据完全共享。部署完成后可在 Cloudflare Dashboard 中分别绑定不同的自定义域名（Settings → Domains & Routes）。
+> **说明**：两个环境的 Durable Objects 虽然绑定相同的 class_name，但因 Worker 名称不同，数据完全隔离。部署完成后可在 Cloudflare Dashboard 中分别绑定不同的自定义域名（Settings → Domains & Routes）。
 
 #### 可选：配置 Turnstile 人机验证
 
@@ -209,9 +209,11 @@ flowchart TB
 1. **创建 Turnstile Widget**：登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)，进入 Turnstile 页面创建一个新的 Widget。
 2. **获取密钥**：创建后会获得一个 **Site Key**（公开）和一个 **Secret Key**（保密）。
 3. **配置环境变量**：在 Cloudflare Dashboard 的 Workers 设置中，进入 "Settings" → "Variables and Secrets"，添加以下环境变量：
-   - `TURNSTILE_SECRET` = 你的 Secret Key（类型选择 Secret）
-   - `TURNSTILE_SITEKEY` = 你的 Site Key（类型选择 Text）
+   - `TURNSTILE_SECRET` = 你的 Secret Key
+   - `TURNSTILE_SITEKEY` = 你的 Site Key
 4. **重新部署**：运行部署命令使配置生效。
+
+> **环境变量类型建议**：建议将所有环境变量都设置为 **Secret** 类型。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。在 Dashboard 添加变量时，选择 "Secret" 类型即可。
 
 > **说明**：Turnstile 验证为会话级别，用户通过验证后当前会话内所有功能可用，关闭浏览器后需重新验证。
 
@@ -227,11 +229,13 @@ flowchart TB
    - 创建后获得 **Client ID**，点击 **Generate a new client secret** 生成 **Client Secret**（仅显示一次，请立即保存）
 
 2. **配置环境变量**：在 Cloudflare Dashboard 的 Workers 设置中，进入 "Settings" → "Variables and Secrets"，添加以下环境变量：
-   - `GITHUB_CLIENT_ID` = 你的 Client ID（类型选择 Text）
-   - `BASE_URL` = `https://your-domain.com`（你的部署域名，类型选择 Text）
-   - `GITHUB_CLIENT_SECRET` = 你的 Client Secret（类型选择 Secret）
+   - `GITHUB_CLIENT_ID` = 你的 Client ID
+   - `BASE_URL` = `https://your-domain.com`（你的部署域名）
+   - `GITHUB_CLIENT_SECRET` = 你的 Client Secret
 
 3. **重新部署**：如果你是刚刚修改了环境变量，且是首次启用该功能，请务必删除旧版并全新部署以初始化数据库。
+
+> **环境变量类型建议**：建议将所有环境变量都设置为 **Secret** 类型。Secrets 存储在 Cloudflare 加密存储中，与代码部署分离，重新部署时不会被覆盖或丢失。在 Dashboard 添加变量时，选择 "Secret" 类型即可。
 
 > **说明**：服务器凭据（密码/私钥）在数据库中使用 AES-256-GCM 加密存储，本地加密密钥将自动生成并安全地存储在数据库中（也可在环境变量中手动设置 `SESSION_SECRET` 来指定）。连接时凭据不经过前端，通过 one-time-token 机制安全传递。
 
@@ -302,11 +306,12 @@ pnpm run dev
 
 #### 提交 PR 的流程
 
-1. 基于 `main` 分支创建你的特性分支：`git checkout -b feat/your-feature`
+1. 基于 `test` 分支创建你的特性分支：`git checkout -b feat/your-feature`
 2. 进行开发并本地测试
-3. 提交 PR 到 `main` 分支
+3. 提交 PR 到 `test` 分支
+4. 测试通过后，维护者会将 `test` 分支合并到 `main` 分支
 
-> **说明**：`test` 分支为预发布分支，用于部署测试环境，普通开发请基于 `main` 分支工作。
+> **说明**：`main` 分支设置了保护规则，禁止直接推送和外部 PR。所有变更必须先提交到 `test` 分支进行测试。
 
 ### 技术栈
 

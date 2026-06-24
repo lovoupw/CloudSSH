@@ -163,7 +163,7 @@ This project implements a complete SSH-2.0 protocol stack:
 4. **Access the App**: After successful deployment, access via the default domain `https://cloudssh.<your-subdomain>.workers.dev`.
 5. **Bind Custom Domain** (Optional): Go to Worker Settings → Domains & Routes → Add, enter your domain and confirm.
 
-> **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). Both Workers share the same DO class names for data synchronization.
+> **Note**: To deploy a test environment, repeat the above steps on the `test` branch to create a separate Worker (e.g., `cloudssh-test`). The Durable Objects data between both environments is completely isolated.
 
 #### Method 2: Local CLI Deployment
 
@@ -198,7 +198,7 @@ This project implements a complete SSH-2.0 protocol stack:
 | Environment | Command | Default Domain | Description |
 |-------------|---------|---------------|-------------|
 | Production | `pnpm run deploy` | `cloudssh.<subdomain>.workers.dev` | main branch code |
-| Test | `pnpm run deploy:test` | `cloudssh-test.<subdomain>.workers.dev` | test branch code, shares DO data with production |
+| Test | `pnpm run deploy:test` | `cloudssh-test.<subdomain>.workers.dev` | test branch code, DO data isolated from production |
 
 > **Note**: Both environments bind to Durable Objects with the same `class_name`, sharing data completely. After deployment, you can bind different custom domains for each environment in the Cloudflare Dashboard (Settings → Domains & Routes).
 
@@ -209,9 +209,11 @@ To prevent malicious bot abuse, it is recommended to enable Cloudflare Turnstile
 1. **Create Turnstile Widget**: Log in to [Cloudflare Dashboard](https://dash.cloudflare.com/), go to the Turnstile page and create a new Widget.
 2. **Get Keys**: After creation, you will receive a **Site Key** (public) and a **Secret Key** (private).
 3. **Configure Environment Variables**: In the Cloudflare Dashboard Workers settings, go to "Settings" → "Variables and Secrets", add the following environment variables:
-   - `TURNSTILE_SECRET` = your Secret Key (Type: Secret)
-   - `TURNSTILE_SITEKEY` = your Site Key (Type: Text)
+   - `TURNSTILE_SECRET` = your Secret Key
+   - `TURNSTILE_SITEKEY` = your Site Key
 4. **Redeploy**: Run the deployment command to apply the configuration.
+
+> **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
 
 > **Note**: Turnstile verification is session-level. After verification, all features are available for the current session. Closing the browser will require re-verification.
 
@@ -227,11 +229,13 @@ With GitHub OAuth enabled, users can log in with their GitHub account and save/m
    - After creation, note the **Client ID**, then click **Generate a new client secret** to get the **Client Secret** (shown only once, save it immediately)
 
 2. **Configure Environment Variables**: In the Cloudflare Dashboard Workers settings, go to "Settings" → "Variables and Secrets", add the following environment variables:
-   - `GITHUB_CLIENT_ID` = your Client ID (Type: Text)
-   - `BASE_URL` = `https://your-domain.com` (your deployed domain, Type: Text)
-   - `GITHUB_CLIENT_SECRET` = your Client Secret (Type: Secret)
+   - `GITHUB_CLIENT_ID` = your Client ID
+   - `BASE_URL` = `https://your-domain.com` (your deployed domain)
+   - `GITHUB_CLIENT_SECRET` = your Client Secret
 
 3. **Redeploy**: If you just added the variables and are enabling the feature for the first time, you must delete the old deployment and redeploy to initialize the database.
+
+> **Environment Variable Type Recommendation**: It is recommended to set all environment variables as **Secret** type. Secrets are stored in Cloudflare's encrypted storage, separate from code deployments, and will not be overwritten or lost during redeployments. When adding variables in the Dashboard, simply select the "Secret" type.
 
 > **Note**: Server credentials (passwords/private keys) are encrypted with AES-256-GCM before storage. The local encryption key is automatically generated and safely stored in the database (you can also manually override it by setting `SESSION_SECRET` in environment variables). During connection, credentials never pass through the frontend — they are securely transmitted via a one-time-token mechanism.
 
@@ -302,11 +306,12 @@ After the dev server starts, visit the local address shown in the terminal (usua
 
 #### Submitting a PR
 
-1. Create your feature branch from `main`: `git checkout -b feat/your-feature`
+1. Create your feature branch from `test`: `git checkout -b feat/your-feature`
 2. Develop and test locally
-3. Submit a PR to the `main` branch
+3. Submit a PR to the `test` branch
+4. After testing passes, the maintainer will merge the `test` branch into `main`
 
-> **Note**: The `test` branch is a pre-release branch for deploying the test environment. For regular development, work based on the `main` branch.
+> **Note**: The `main` branch has protection rules that prevent direct pushes and external PRs. All changes must be submitted to the `test` branch for testing first.
 
 ### Tech Stack
 
